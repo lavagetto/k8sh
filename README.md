@@ -1,6 +1,6 @@
 # K8sh
 
-This is a simple interactive shell for interacting with applications running in a kubernetes cluster. It was mostly written over a long weekend to scratch a specific hitch I had. I strongly suggest you read the disclaimer in the COPYING.md file before proceeding further.
+This is a simple interactive shell for interacting with applications running in a kubernetes cluster. It was mostly written over a long weekend to scratch a specific itch I had. I strongly suggest you read the disclaimer in the COPYING.md file before proceeding further.
 
 It assumes you have one host which has full access to the kubernetes api via `kubectl`. 
 k8sh can be run from that host, or can use ssh to connect to it.
