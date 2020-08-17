@@ -52,13 +52,14 @@ class Kubectl:
     cluster: str = attr.ib()
     namespace: Optional[str] = attr.ib()
     remote: RemoteCommand = attr.ib()
-    kubeconfig_fmt = "KUBECONFIG=/etc/kubernetes/{namespace}-{cluster}.config"
+    #kubeconfig_fmt = "KUBECONFIG=/etc/kubernetes/{namespace}-{cluster}.config"
+    kubeconfig_fmt = "KUBECONFIG=/etc/kubernetes/admin.conf"
 
     def _kubeconfig(self, admin: bool = False) -> str:
         """Returns the kubeconfig file path."""
         if admin:
             # If the command is to be run as admin, we search for the admin kubeconfig
-            return "sudo " + self.kubeconfig_fmt.format(
+            return self.kubeconfig_fmt.format(
                 namespace="admin", cluster=self.cluster
             )
         else:
@@ -69,11 +70,11 @@ class Kubectl:
     def _kubectl(self, command: str, admin: bool = False) -> List[str]:
         """Returns the full command array for a kubectl invocation."""
         if self.namespace is not None:
-            _cmd = "{} kubectl -n {} {}".format(
+            _cmd = "sudo kubectl --kubeconfig {} -n {} {}".format(
                 self._kubeconfig(admin), self.namespace, command
             )
         else:
-            _cmd = "{} kubectl {}".format(self._kubeconfig(admin), command)
+            _cmd = "kubectl --kubeconfig {} {}".format(self._kubeconfig(admin), command)
         return shlex.split(_cmd)
 
     def run_sync(self, command: str, admin: bool = False):
