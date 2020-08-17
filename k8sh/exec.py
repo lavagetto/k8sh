@@ -52,8 +52,7 @@ class Kubectl:
     cluster: str = attr.ib()
     namespace: Optional[str] = attr.ib()
     remote: RemoteCommand = attr.ib()
-    #kubeconfig_fmt = "KUBECONFIG=/etc/kubernetes/{namespace}-{cluster}.config"
-    kubeconfig_fmt = "KUBECONFIG=/etc/kubernetes/admin.conf"
+    kubeconfig_fmt = "KUBECONFIG=/etc/kubernetes/{namespace}-{cluster}.config"
 
     def _kubeconfig(self, admin: bool = False) -> str:
         """Returns the kubeconfig file path."""
