@@ -4,7 +4,7 @@ import shlex
 import copy
 from typing import Any, Dict, Optional, Tuple
 
-from k8sh import Ctx, KubeContext, blue, k8shError, red, setup
+from k8sh import k8shConfigPath, Ctx, KubeContext, blue, k8shError, red, setup
 from k8sh.exec import Kubectl, RemoteCommand
 
 CAT_NAV = "Kubernetes navigation"
@@ -325,6 +325,6 @@ def from_configfile(path: str) -> KubeCmd:
 
 
 def main():
-    configfile = os.path.expanduser("~/.k8shrc.yaml")
+    configfile = k8shConfigPath()
     sh = from_configfile(configfile)
     sh.cmdloop()

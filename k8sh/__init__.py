@@ -7,13 +7,16 @@ allows you to drill down from cluster to namespace, to pods/deployments, and fro
 to individual containers, allowing you to inspect them and execute processes in
 their namespaces.
 """
+from pathlib import Path
 from typing import Optional, List
 import enum
+import warnings
 
 import yaml
 import os
 
 from colorama import Fore, Style, init
+from xdg import XDG_CONFIG_HOME
 import attr
 
 
@@ -101,3 +104,14 @@ class KubeContext:
             return self.env[idx - 1]
         except IndexError:
             return None
+
+def k8shConfigPath() -> Path:
+    filename = "k8shrc.yaml"
+    xdgpath = XDG_CONFIG_HOME.joinpath(filename)
+    legacypath = Path.home().joinpath(f".{filename}")
+    if xdgpath.is_file():
+        return xdgpath
+    elif legacypath.is_file():
+        warnings.warn(f"Config path {legacypath} is deprecated, please use {xdgpath} instead")
+        return legacypath
+    return xdgpath

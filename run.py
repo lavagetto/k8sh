@@ -1,10 +1,10 @@
 import os
 
-from k8sh import shell
+from k8sh import k8shConfigPath, shell
 
 
 def main():
-    configfile = os.path.expanduser("~/.k8shrc.yaml")
+    configfile = k8shConfigPath()
     sh = shell.from_configfile(configfile)
     sh.cmdloop()
 

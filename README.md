@@ -16,7 +16,7 @@ Configuration of the shell is pretty simple, and is done by writing a yaml file.
 
 (Yes, the configuration file is in yaml. It's kubernetes, what did you expect?)
 
-Anyways, the file, located at `~/.k8shrc.yaml` can contain any of the following 
+Anyways, the file, located at `~/.config/k8shrc.yaml` can contain any of the following
 configuration keys:
 
 * `kubectl_host`: The host to ssh into to run kubectl. If you can run kubectl 
@@ -37,7 +37,7 @@ It treats, quite simplistically, a cluster like a filesystem hierarchy where:
 are consequent directories in the hierarchy. While the cluster needs to be chosen with `use <cluster>`, all the other levels can be navigated with `cd <what>` and `ls`. For example, let's say we need to inspect the logs of an application called `gatekeeper` running within the `production` cluster, in namespace `auth` 
 
 ```bash
-$ kubesh
+$ k8sh
 # first thing we need to do is to select a cluster
 NONE (root) $ use production
 # let's see all the available namespaces
