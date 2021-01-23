@@ -1,5 +1,3 @@
-import os
-
 from k8sh import k8shConfigPath, shell
 
 

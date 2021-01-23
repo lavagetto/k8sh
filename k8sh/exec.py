@@ -31,6 +31,8 @@ class RemoteCommand:
         rc = None
         while rc is None:
             try:
+                if ssh.stdout is None:
+                    continue
                 output = ssh.stdout.readline().decode().rstrip()
                 if output != "":
                     print(output)
