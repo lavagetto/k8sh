@@ -34,31 +34,10 @@ class KubeCmd(cmd2.Cmd):
             while self.current.parent is not None:
                 self.current = self.current.parent
             return
-        # Just treat the cd command as a recursive one.
-        for single_val in val.split("/"):
-            self._cd(single_val)
-
-    def _cd(self, val: str, refresh: bool = False):
-        if val == "..":
-            if self.current.parent is not None:
-                self.current = self.current.parent
-            return
-        if refresh:
-            self.current.refresh()
-        new: Optional[kubernetes.KubeObject] = None
-        for c in self.current.children:
-            if c.name == val:
-                new = c
-        if new is not None:
-            self.current = new
-        else:
-            if not refresh:
-                # children not found. Clean the cache and try again
-                self._cd(val, True)
-            else:
-                raise k8shError(
-                    f"Could not find {val} in {self.current.kind} {self.current.name}"
-                )
+        next_element = self.current
+        while val != "":
+            next_element, val = next_element.cd(val)
+        self.current = next_element
 
     def _prompt(self):
         layer = self.current.kind
@@ -160,7 +139,7 @@ class KubeCmd(cmd2.Cmd):
         containers will be shown.
         """
         for el in self.current.children:
-            print(el.name)
+            print(el.path_fragment())
 
     @cmd2.with_category(CAT_CONT)
     def do_ps(self, arg):

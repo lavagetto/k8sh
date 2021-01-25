@@ -62,8 +62,8 @@ def test_path(hierarchy):
     """Test path output at all levels of the chain"""
     assert hierarchy[0].path == "/"
     assert hierarchy[1].path == "/namespace"
-    assert hierarchy[2].path == "/namespace/pod"
-    assert hierarchy[3].path == "/namespace/pod/container"
+    assert hierarchy[2].path == "/namespace/pods/pod"
+    assert hierarchy[3].path == "/namespace/pods/pod/container"
 
 
 # Pod-specific tests.

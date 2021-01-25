@@ -1,6 +1,6 @@
 import os
 import shlex
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 import attr
 
@@ -32,6 +32,35 @@ class KubeObject:
     def path_fragment(self) -> str:
         """The path fragment for this object"""
         return self.name
+
+    def cd(self, val) -> Tuple["KubeObject", str]:
+        # doubledot support
+        if val == "..":
+            # If there is no parent, just return yourself.
+            if self.parent is None:
+                return (self, "")
+            else:
+                return (self.parent, "")
+        if val.startswith("../"):
+            if self.parent is None:
+                raise k8shError("Could not change directory beyond root")
+            else:
+                return (self.parent, val[3:])
+
+        # Normal cd support
+        for el in self.children:
+            frag = el.path_fragment()
+            # Precise match, we're at the end of the hierarchy
+            if val == frag:
+                return (el, "")
+            # If no precise match is found, let's try
+            # as a prefix path.
+            frag += "/"
+            if val.startswith(frag):
+                residual = val.replace(frag, "")
+                return (el, residual)
+        # No result was found. This is an error.
+        raise k8shError(f"Could not find {val} in {self.path_fragment()}")
 
     @property
     def path(self) -> str:
@@ -74,6 +103,9 @@ class Pod(KubeObject):
         if self._hostname is None:
             raise k8shError("Could not fetch the hostname.")
         return self._hostname
+
+    def path_fragment(self):
+        return f"pods/{self.name}"
 
     def refresh(self):
         self._children = None
