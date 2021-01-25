@@ -9,7 +9,7 @@ setup(
     author='Giuseppe Lavagetto',
     author_email='lavagetto@gmail.com',
     url='https://github.com/lavagetto/k8sh',
-    install_requires=['cmd2', 'pyyaml'],
+    install_requires=['cmd2', 'pyyaml', 'xdg'],
     zip_safe=False,
     packages=find_packages(),
     entry_points={
