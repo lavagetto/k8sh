@@ -1,10 +1,9 @@
-import cmd2
 import os
-import shlex
-import copy
-from typing import Any, Dict, Optional, Tuple
+from typing import Optional
 
-from k8sh import k8shConfigPath, Ctx, KubeContext, blue, k8shError, red, setup
+import cmd2  # type: ignore
+
+from k8sh import blue, k8shConfigPath, k8shError, kubernetes, red, setup
 from k8sh.exec import Kubectl, RemoteCommand
 
 CAT_NAV = "Kubernetes navigation"
@@ -12,23 +11,46 @@ CAT_CONT = "Container-level debugging"
 
 
 class KubeCmd(cmd2.Cmd):
-    def __init__(self, ctx: KubeContext, remote: RemoteCommand, *args):
-        self.ctx = ctx
-        self.remote = remote
+    def __init__(self, remote: RemoteCommand, *args):
+        self.remote: RemoteCommand = remote
+        self.current: kubernetes.KubeObject = kubernetes.KubeObject(
+            "null", Kubectl("", "", self.remote), None
+        )
         super().__init__(*args)
 
-    def _from_ctx(self) -> Kubectl:
-        return Kubectl(
-            self.ctx.get(Ctx.CLUSTER), self.ctx.get(Ctx.SERVICE), self.remote
-        )
+    def _check_current(self, desired_type: Optional[str] = None):
+        """Check we have a valid current object"""
+        if self.current.kind == "":
+            raise k8shError("Please select a cluster with 'use' first")
+        if desired_type is not None and self.current.kind != desired_type:
+            raise k8shError(
+                "Invalid context: f{self.current.kind}, should be f{desired_type}"
+            )
+
+    def cd(self, val: str):
+        self._check_current()
+        if not val:
+            # Rewind to cluster level
+            while self.current.parent is not None:
+                self.current = self.current.parent
+            return
+        next_element = self.current
+        while val != "":
+            next_element, val = next_element.cd(val)
+        self.current = next_element
 
     def _prompt(self):
-        layer = self.ctx.current().name.lower()
-        if self.ctx.current() == Ctx.ROOT:
-            return "NONE ({}) $ ".format(layer)
-        cl = red(self.ctx.get(Ctx.CLUSTER))
-        path = blue("/" + "/".join(self.ctx.env[1:]))
-        return "{}:{} ({})$ ".format(cl, path, layer)
+        layer = self.current.kind
+        # Root layer
+        if layer == "":
+            return "NONE (root) $ "
+        # Find the cluster name
+        c = self.current
+        while c.kind != "cluster":
+            c = c.parent
+        cl = red(c.name)
+        path = blue(self.current.path)
+        return f"{cl}:{path} ({layer})$ "
 
     def preloop(self):
         self.prompt = self._prompt()
@@ -38,130 +60,8 @@ class KubeCmd(cmd2.Cmd):
             self.prompt = self._prompt()
         return super().postcmd(stop, line)
 
-    def context_ls(self, *args):
-        layer = self.ctx.current()
-        if layer == Ctx.ROOT:
-            return []
-        elif layer == Ctx.CLUSTER:
-            return self.namespaces(*args)
-        elif layer == Ctx.SERVICE:
-            return self.pods(*args)
-        elif layer == Ctx.POD:
-            res = self.containers()
-            return [el["name"] for el in res["containers"]]
-        else:
-            return []
-
-    def namespaces(self, *args):
-        cluster = self.ctx.get(Ctx.CLUSTER)
-        ctl = Kubectl(cluster, "admin", self.remote)
-        return [
-            r["metadata"]["name"] for r in ctl.json("get namespaces", True)["items"]
-        ]
-
-    def pods(self, *args):
-        ctl = self._from_ctx()
-        res = ctl.json("get pods")
-        return [r["metadata"]["name"] for r in res["items"]]
-
-    def containers(self) -> Dict[str, Any]:
-        if self.ctx.current().value < Ctx.POD:
-            raise k8shError("Containers can only be listed at pod level.")
-        ctl = self._from_ctx()
-        res = ctl.json("get pods " + self.ctx.get(Ctx.POD))
-        hostname = res["spec"]["nodeName"]
-        return {
-            "containers": [
-                {"name": r["name"], "ID": r["containerID"]}
-                for r in res["status"]["containerStatuses"]
-            ],
-            "host": hostname,
-        }
-
-    def cd(self, val: Optional[str] = None):
-        if val is None:
-            self.ctx.env = []
-        else:
-            # Just treat the cd command as a recursive one.
-            for single_val in val.split("/"):
-                self._cd(single_val)
-
-    def _cd(self, val: str):
-        if val == "..":
-            try:
-                self.ctx.pop()
-            except k8shError:
-                pass
-        else:
-            cur = self.ctx.current()
-            available = self.context_ls()
-            if val in available:
-                self.ctx.push(val)
-            else:
-                raise k8shError(
-                    "Could not find {} in {} {}".format(
-                        val, cur.name.lower(), self.ctx.get(cur)
-                    )
-                )
-
-    def _container_info(self) -> Tuple[str, int]:
-        res = self.containers()
-        remote_host = res["host"]
-        for el in res["containers"]:
-            if el["name"] == self.ctx.get(Ctx.CONTAINER):
-                id = el["ID"].replace("docker://", "")
-        return (remote_host, id)
-
-    def ps(self):
-        if self.ctx.current() != Ctx.CONTAINER:
-            raise k8shError("ps can only be used within a container")
-        remote_host, id = self._container_info()
-        r = RemoteCommand(remote_host)
-        res = r.run_sync(["sudo", "docker", "top", id])
-        if res != 0:
-            raise k8shError(
-                "Executing docker top on {} exited with error code {}".format(
-                    remote_host, res
-                )
-            )
-
-    def nsenter(self, arg):
-        """
-        Allows you to execute command from the kubernetes worker
-        inside the container's namespace. You will have to pass
-        the namespaces you want to enter, and the command to execute.
-        """
-        if self.ctx.current() != Ctx.CONTAINER:
-            raise k8shError("nsenter can only be used within a container")
-        remote_host, id = self._container_info()
-        r = RemoteCommand(remote_host)
-        res = r.run(["sudo", "docker", "inspect", "-f", "'{{.State.Pid}}'", id])
-        if res.returncode != 0:
-            raise k8shError(
-                "Error finding the PID of the container: exitcode {}: {}".format(
-                    res.returncode, res.stderr.decode()
-                )
-            )
-        else:
-            pid = res.stdout.decode().rstrip()
-            cmd = ["sudo", "nsenter", "-t", pid] + shlex.split(arg)
-            res = r.run_sync(cmd)
-            if res != 0:
-                raise k8shError(
-                    "Command {} exited with return code {}".format(cmd, res)
-                )
-
-    def tail(self, arg):
-        if self.ctx.current() != Ctx.CONTAINER:
-            raise k8shError("nsenter can only be used within a container")
-        ctl = self._from_ctx()
-        rc = ctl.run_sync(
-            "logs {} {} {}".format(
-                arg, self.ctx.get(Ctx.POD), self.ctx.get(Ctx.CONTAINER),
-            )
-        )
-        if rc != 0:
-            raise k8shError("Could not read the logs")
+    def postloop(self):
+        print("")
 
     #
     #  Interactive shell commands.
@@ -172,7 +72,8 @@ class KubeCmd(cmd2.Cmd):
         Usage: use <cluster>
         Select the cluster to operate on.
         """
-        self.ctx.env = [arg]
+        kubectl = Kubectl(arg, "", self.remote)
+        self.current = kubernetes.Cluster(arg, kubectl)
 
     def do_exit(self, arg):
         """Exit the program"""
@@ -181,11 +82,10 @@ class KubeCmd(cmd2.Cmd):
 
     def do_EOF(self, line):
         """Exit the program by typing Ctrl+D"""
-        print("")
-        return self.do_exit(line)
+        return True
 
     @cmd2.with_category(CAT_NAV)
-    def do_cd(self, arg):
+    def do_cd(self, arg: str):
         """
         Usage: cd <what>
         Change layer of the kubernetes hierarchy.
@@ -194,47 +94,38 @@ class KubeCmd(cmd2.Cmd):
         If <what> is omitted, the whole enviroment is reset to the cluster
         level.
         """
-        if not arg:
-            self.ctx.reset()
-            return
-
         try:
             self.cd(arg)
         except k8shError as e:
             print(red(str(e)))
 
     def complete_cd(self, text, line, start_index, end_index):
+        try:
+            self._check_current()
+        except k8shError:
+            return []
         if text == "":
-            res = self.context_ls()
-            return res
-        if "/" in text:
+            return [c.name for c in self.current.children]
+        elif "/" in text:
             base, to_suggest = text.rsplit("/", 1)
         else:
             base = ""
             to_suggest = text
-        # Create a copy of our current context we'll re-inject after we're done.
-        ctx = KubeContext()
-        ctx.env = copy.copy(self.ctx.env)
+        # save the current object, then move to the base
+        cur = self.current
         try:
-            for el in base.split("/"):
-                if el == "":
-                    break
-                if el == "..":
-                    self.ctx.pop()
-                else:
-                    self.ctx.push(el)
-            available = self.context_ls()
             if base != "":
-                return [
-                    base + "/" + el for el in available if el.startswith(to_suggest)
-                ]
-            else:
-                return [el for el in available if el.startswith(text)]
-        except Exception:
-            # No autocomplete.
+                self.cd(base)
+            return [
+                os.path.join(base, c.name)
+                for c in self.current.children
+                if c.name.startswith(to_suggest)
+            ]
+        except k8shError:
             return []
         finally:
-            self.ctx.env = ctx.env
+            # reset the current object
+            self.current = cur
 
     @cmd2.with_category(CAT_NAV)
     def do_ls(self, arg):
@@ -247,8 +138,8 @@ class KubeCmd(cmd2.Cmd):
         For example, within a namespace, pods will be listed. In a pod,
         containers will be shown.
         """
-        for el in self.context_ls():
-            print(el)
+        for el in self.current.children:
+            print(el.path_fragment())
 
     @cmd2.with_category(CAT_CONT)
     def do_ps(self, arg):
@@ -259,7 +150,8 @@ class KubeCmd(cmd2.Cmd):
         Show processes running in the container
         """
         try:
-            self.ps()
+            self._check_current("container")
+            self.current.ps()
         except k8shError as e:
             print(red(str(e)))
 
@@ -274,7 +166,8 @@ class KubeCmd(cmd2.Cmd):
         if arg != "-f":
             arg = ""
         try:
-            self.tail(arg)
+            self._check_current("container")
+            self.current.tail(arg)
         except k8shError as e:
             print(red(str(e)))
 
@@ -290,7 +183,8 @@ class KubeCmd(cmd2.Cmd):
           nsenter -n tcpdump
         """
         try:
-            self.nsenter(arg)
+            self._check_current("container")
+            self.current.nsenter(arg)
         except k8shError as e:
             print(red(str(e)))
 
@@ -302,16 +196,12 @@ class KubeCmd(cmd2.Cmd):
 
         Runs a command **within** the container
         """
-        if self.ctx.current() != Ctx.CONTAINER:
-            raise k8shError("nsenter can only be used within a container")
-        ctl = self._from_ctx()
         # This needs to run with admin privileges.
-        ctl.run_sync(
-            "exec {} -c {} -- {}".format(
-                self.ctx.get(Ctx.POD), self.ctx.get(Ctx.CONTAINER), arg
-            ),
-            True,
-        )
+        try:
+            self._check_current("container")
+            self.current.exec(arg)
+        except k8shError as e:
+            print(red(str(e)))
 
 
 def from_configfile(path: str) -> KubeCmd:
@@ -319,8 +209,7 @@ def from_configfile(path: str) -> KubeCmd:
     config = setup(path)
     kubectl_remote = RemoteCommand(config.kubectl_host, config.ssh_opts)
     Kubectl.kubeconfig_fmt = config.kubeconfig_format
-    ctx = KubeContext()
-    sh = KubeCmd(ctx, kubectl_remote)
+    sh = KubeCmd(kubectl_remote)
     return sh
 
 

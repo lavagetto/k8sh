@@ -7,17 +7,15 @@ allows you to drill down from cluster to namespace, to pods/deployments, and fro
 to individual containers, allowing you to inspect them and execute processes in
 their namespaces.
 """
-from pathlib import Path
-from typing import Optional, List
-import enum
-import warnings
-
-import yaml
 import os
+import warnings
+from pathlib import Path
+from typing import List, Optional
 
-from colorama import Fore, Style, init
-from xdg import XDG_CONFIG_HOME
 import attr
+import yaml
+from colorama import Fore, Style, init  # type: ignore
+from xdg import XDG_CONFIG_HOME  # type: ignore
 
 
 @attr.s
@@ -55,56 +53,6 @@ class k8shError(RuntimeError):
     """Special exception for logical errors."""
 
 
-class Ctx(enum.IntEnum):
-    ROOT = 0
-    CLUSTER = 1
-    SERVICE = 2
-    POD = 3
-    CONTAINER = 4
-
-
-class KubeContext:
-    ctx_order = [Ctx.ROOT, Ctx.CLUSTER, Ctx.SERVICE, Ctx.POD, Ctx.CONTAINER]
-
-    def __init__(self, **kwargs):
-        self.env = []
-
-        for k in self.ctx_order[1:]:
-            key = k.name.lower()
-            if key in kwargs:
-                self.env.append(kwargs[key])
-            else:
-                # I know, I know. This could be better. Oh well :P
-                break
-
-    def current(self) -> Ctx:
-        return self.ctx_order[len(self.env)]
-
-    def pop(self):
-        if self.env == []:
-            raise k8shError("Cannot go back further than the root context.")
-        self.env.pop()
-
-    def push(self, val):
-        self.env.append(val)
-
-    def reset(self):
-        """
-        Reset the context to just the first element
-        """
-        cluster = self.get(Ctx.CLUSTER)
-        self.env = [cluster]
-
-    def get(self, attr: Ctx):
-        idx = self.ctx_order.index(attr)
-        # Why would someone want to get the root context? still.
-        if idx == 0:
-            return ""
-        try:
-            return self.env[idx - 1]
-        except IndexError:
-            return None
-
 def k8shConfigPath() -> Path:
     filename = "k8shrc.yaml"
     xdgpath = XDG_CONFIG_HOME.joinpath(filename)
@@ -112,6 +60,8 @@ def k8shConfigPath() -> Path:
     if xdgpath.is_file():
         return xdgpath
     elif legacypath.is_file():
-        warnings.warn(f"Config path {legacypath} is deprecated, please use {xdgpath} instead")
+        warnings.warn(
+            f"Config path {legacypath} is deprecated, please use {xdgpath} instead"
+        )
         return legacypath
     return xdgpath
