@@ -1,6 +1,6 @@
 import os
 import shlex
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import attr
 
@@ -189,13 +189,46 @@ class Namespace(KubeObject):
     def children(self) -> List["KubeObject"]:
         if self._children is None:
             self._children = []
-            for r in self.kubectl.json("get pods", True)["items"]:
+            for r in self.kubectl.json("get pods", False)["items"]:
                 name = r["metadata"]["name"]
                 self._children.append(Pod(name=name, kubectl=self.kubectl, parent=self))
+            for srv in self.kubectl.json("get services", False)["items"]:
+                name = srv["metadata"]["name"]
+                self._children.append(
+                    Service(name=name, kubectl=self.kubectl, parent=self)
+                )
         return self._children
 
     def refresh(self):
         self._children = None
+
+
+class Service(KubeObject):
+    kind: str = "service"
+
+    def path_fragment(self):
+        return f"services/{self.name}"
+
+    @property
+    def children(self) -> List["KubeObject"]:
+        return []
+
+    def get(self) -> Dict:
+        """Get the data about the service"""
+        service = self.kubectl.json(f"get services {self.name}")
+        metadata = service["metadata"]
+        ports = service["spec"]["ports"]
+        return {
+            "name": f"{metadata['namespace']}/services/{metadata['name']}",
+            "ports": [
+                {
+                    "name": p["name"],
+                    "target": p["targetPort"],
+                    "nodeport": p["nodePort"],
+                }
+                for p in ports
+            ],
+        }
 
 
 class Cluster(KubeObject):
