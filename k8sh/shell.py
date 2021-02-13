@@ -8,6 +8,7 @@ from k8sh.exec import Kubectl, RemoteCommand
 
 CAT_NAV = "Kubernetes navigation"
 CAT_CONT = "Container-level debugging"
+CAT_SERV = "Service information"
 
 
 class KubeCmd(cmd2.Cmd):
@@ -200,6 +201,22 @@ class KubeCmd(cmd2.Cmd):
         try:
             self._check_current("container")
             self.current.exec(arg)
+        except k8shError as e:
+            print(red(str(e)))
+
+    @cmd2.with_category(CAT_SERV)
+    def do_view(self, arg):
+        """
+        Usage: view
+        Context: service
+
+        Shows the ports/ips exposed by the service
+        """
+        try:
+            self._check_current("service")
+            data = self.current.get()
+            for port in data["ports"]:
+                print(f"{port['name']}:\t{port['nodeport']}->{port['target']}")
         except k8shError as e:
             print(red(str(e)))
 

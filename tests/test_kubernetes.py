@@ -20,10 +20,11 @@ def hierarchy(mockctl) -> List[k.KubeObject]:
     cl = k.Cluster("cluster", mockctl)
     ns = k.Namespace("namespace", mockctl, cl)
     p = k.Pod("pod", mockctl, ns)
+    s = k.Service("service", mockctl, ns)
     p._hostname = "hostname.example.com"
     c = k.Container("container", mockctl, p)
     c.ID = "123"
-    return [cl, ns, p, c]
+    return [cl, ns, p, c, s]
 
 
 @pytest.fixture
@@ -49,10 +50,13 @@ def pod(mockctl) -> k.Pod:
 def test_all_init(hierarchy):
     """Test pod initialization"""
     for i, kubeobject in enumerate(hierarchy):
-        if i != 0:
+        if i == 0:
+            assert kubeobject.parent is None
+        elif i < 4:
             assert kubeobject.parent == hierarchy[i - 1]
         else:
-            assert kubeobject.parent is None
+            # the service object is a child of the namespace
+            assert kubeobject.parent == hierarchy[1]
         # While the object *has* children, they shouldn't be initialized.
         assert kubeobject._children is None
         assert kubeobject.name == kubeobject.kind
@@ -99,3 +103,81 @@ def test_pod_hostname(pod):
 
 
 # End pod
+
+# Begin service
+def test_service_basics(hierarchy):
+    s = hierarchy[4]
+    assert s.name == "service"
+    assert s.parent == hierarchy[1]
+    assert s.children == []
+    s.kubectl.remote.run.asset_not_called()
+    assert s.path_fragment() == "services/service"
+    assert s.path == "/namespace/services/service"
+
+
+def test_service_cd(hierarchy):
+    s = hierarchy[4]
+    with pytest.raises(k8sh.k8shError):
+        s.cd("something")
+    assert s.cd("../..") == (hierarchy[1], "..")
+
+
+def test_service_get(mockctl):
+    s = k.Service("service", mockctl, None)
+    # Simplified output of a typical
+    # `kubectl -n $namespace get service $service -o=json`
+    mockctl.remote.run.return_value = subprocess.CompletedProcess(
+        ["kubectl", "get", "pods"],
+        0,
+        stdout=b"""
+{
+  "apiVersion": "v1",
+  "kind": "Service",
+  "metadata": {
+    "labels": {
+      "app": "test"
+    },
+     "name": "service",
+    "namespace": "namespace",
+    "resourceVersion": "7",
+    "selfLink": "/api/v1/namespaces/namespace/services/service",
+    "uid": "test"
+  },
+  "spec": {
+    "clusterIP": "192.168.0.100",
+    "externalTrafficPolicy": "Cluster",
+    "ports": [
+      {
+        "name": "http",
+        "nodePort": 3000,
+        "port": 3030,
+        "protocol": "TCP",
+        "targetPort": 3030
+      }
+    ],
+    "selector": {
+      "app": "test",
+      "release": "release"
+    },
+    "sessionAffinity": "None",
+    "type": "NodePort"
+  },
+  "status": {
+    "loadBalancer": {}
+  }
+}
+""",
+    )
+    assert s.get() == {
+        "name": "namespace/services/service",
+        "ports": [{"name": "http", "target": 3030, "nodeport": 3000}],
+    }
+
+
+def test_service_get_fail(mockctl):
+    s = k.Service("service", mockctl, None)
+    mockctl.remote.run.return_value = subprocess.CompletedProcess(
+        ["something"], 1, stdout=b"32@$@36132q", stderr=b"meh."
+    )
+    with pytest.raises(k8sh.k8shError):
+        s.get()
