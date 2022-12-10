@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 import attr
-import yaml
+import yaml  # type: ignore
 from colorama import Fore, Style, init  # type: ignore
 from xdg import XDG_CONFIG_HOME  # type: ignore
 
