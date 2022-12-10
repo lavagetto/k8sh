@@ -21,21 +21,18 @@ from xdg import XDG_CONFIG_HOME  # type: ignore
 @attr.s
 class Config:
     kubectl_host: Optional[str] = attr.ib(default=None, kw_only=True)
-    kubeconfig_format: str = attr.ib(
-        default="KUBECONFIG=/etc/kubernetes/{namespace}-{cluster}.config", kw_only=True
-    )
+    kubeconfig_format: str = attr.ib(default="KUBECONFIG=/etc/kubernetes/{namespace}-{cluster}.config", kw_only=True)
     ssh_opts: Optional[List] = attr.ib(default=None, kw_only=True)
 
 
-def setup(configfile: str) -> Config:
+def setup(configfile: Path) -> Config:
     # Initialize colorama
     init()
     cfg = {}
     # Load a yaml config file, else just return the default configuration.
     if os.path.isfile(configfile):
         try:
-            with open(configfile, "r") as fh:
-                cfg = yaml.safe_load(fh)
+            cfg = yaml.safe_load(configfile.read_text())
         except Exception:
             print(red("Bad configuration file, ignoring it."))
     return Config(**cfg)
@@ -60,8 +57,6 @@ def k8shConfigPath() -> Path:
     if xdgpath.is_file():
         return xdgpath
     elif legacypath.is_file():
-        warnings.warn(
-            f"Config path {legacypath} is deprecated, please use {xdgpath} instead"
-        )
+        warnings.warn(f"Config path {legacypath} is deprecated, please use {xdgpath} instead")
         return legacypath
     return xdgpath

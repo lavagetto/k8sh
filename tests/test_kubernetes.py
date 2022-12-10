@@ -10,9 +10,7 @@ from k8sh import kubernetes as k
 
 @pytest.fixture
 def mockctl() -> e.Kubectl:
-    return e.Kubectl(
-        "cluster", "namespace", mock.MagicMock(autospec=e.RemoteCommand)  # cluster
-    )
+    return e.Kubectl("cluster", "namespace", mock.MagicMock(autospec=e.RemoteCommand))  # cluster
 
 
 @pytest.fixture
@@ -66,8 +64,21 @@ def test_path(hierarchy):
     """Test path output at all levels of the chain"""
     assert hierarchy[0].path == "/"
     assert hierarchy[1].path == "/namespace"
-    assert hierarchy[2].path == "/namespace/pods/pod"
-    assert hierarchy[3].path == "/namespace/pods/pod/container"
+    assert hierarchy[2].path == "/namespace/pod.pod"
+    assert hierarchy[3].path == "/namespace/pod.pod/container"
+
+
+def test_path_change(hierarchy):
+    """Test changing directories works as expected."""
+    cl, ns, p, c, s = hierarchy
+    # Change to the parent
+    assert ns.cd("..") == (cl, "")
+    # Relative path change
+    assert p.cd("../service.service") == (ns, "service.service")
+    ns._children = [p, s]
+    assert ns.cd("service.service") == (s, "")
+    # Absolute path
+    assert c.cd("/namespace/service.service") == (cl, "namespace/service.service")
 
 
 # Pod-specific tests.
@@ -111,8 +122,8 @@ def test_service_basics(hierarchy):
     assert s.parent == hierarchy[1]
     assert s.children == []
     s.kubectl.remote.run.asset_not_called()
-    assert s.path_fragment() == "services/service"
-    assert s.path == "/namespace/services/service"
+    assert s.path_fragment() == "service.service"
+    assert s.path == "/namespace/service.service"
 
 
 def test_service_cd(hierarchy):
