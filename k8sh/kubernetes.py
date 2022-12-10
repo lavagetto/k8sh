@@ -21,9 +21,7 @@ class KubeObject:
     @property
     def children(self) -> List["KubeObject"]:
         """List the children of this object"""
-        raise NotImplementedError(
-            "The children method needs to be implemented by subclasses."
-        )
+        raise NotImplementedError("The children method needs to be implemented by subclasses.")
 
     def refresh(self):
         """Remove any response cache we might have saved"""
@@ -33,7 +31,19 @@ class KubeObject:
         """The path fragment for this object"""
         return self.name
 
+    @property
+    def root(self) -> "KubeObject":
+        """The root element of the hierarchy"""
+        ptr = self
+        while ptr.parent is not None:
+            ptr = ptr.parent
+        return ptr
+
     def cd(self, val) -> Tuple["KubeObject", str]:
+        """Switch to another object."""
+        # Absolute path support
+        if val.startswith("/"):
+            return (self.root, val[1:])
         # doubledot support
         if val == "..":
             # If there is no parent, just return yourself.
@@ -105,7 +115,7 @@ class Pod(KubeObject):
         return self._hostname
 
     def path_fragment(self):
-        return f"pods/{self.name}"
+        return f"pod.{self.name}"
 
     def refresh(self):
         self._children = None
@@ -135,9 +145,7 @@ class Container(KubeObject):
         """
         res = self._remote.run_sync(["sudo", "docker", "top", self.ID])
         if res != 0:
-            raise k8shError(
-                "Executing docker top on f{self.current.parent.hostname} exited with error code f{res}"
-            )
+            raise k8shError("Executing docker top on f{self.current.parent.hostname} exited with error code f{res}")
 
     def nsenter(self, arg: str):
         """
@@ -148,13 +156,9 @@ class Container(KubeObject):
         if self._remote is None:
             raise k8shError("No remote host defined, impossible to execute.")
         # Find the main pid of the container
-        res = self._remote.run(
-            ["sudo", "docker", "inspect", "-f", "'{{.State.Pid}}'", self.ID]
-        )
+        res = self._remote.run(["sudo", "docker", "inspect", "-f", "'{{.State.Pid}}'", self.ID])
         if res.returncode != 0:
-            raise k8shError(
-                "Error finding the PID of the container: exitcode {res.returncode}: {res.stderr.decode()}"
-            )
+            raise k8shError("Error finding the PID of the container: exitcode {res.returncode}: {res.stderr.decode()}")
         pid = res.stdout.decode().rstrip()
         cmd = ["sudo", "nsenter", "-t", pid] + shlex.split(arg)
         rc = self._remote.run_sync(cmd)
@@ -186,9 +190,7 @@ class Container(KubeObject):
         if self.parent is None:
             raise k8shError("Could not find a linked pod, container badly initialized.")
         # This needs to run with admin privileges
-        rc = self.kubectl.run_sync(
-            f"exec {self.parent.name} -c {self.name} -- {arg}", True
-        )
+        rc = self.kubectl.run_sync(f"exec {self.parent.name} -c {self.name} -- {arg}", True)
         if rc != 0:
             raise k8shError(f"Execution of '{arg}' failed with status code {rc}")
 
@@ -205,9 +207,7 @@ class Namespace(KubeObject):
                 self._children.append(Pod(name=name, kubectl=self.kubectl, parent=self))
             for srv in self.kubectl.json("get services", False)["items"]:
                 name = srv["metadata"]["name"]
-                self._children.append(
-                    Service(name=name, kubectl=self.kubectl, parent=self)
-                )
+                self._children.append(Service(name=name, kubectl=self.kubectl, parent=self))
         return self._children
 
     def refresh(self):
@@ -218,7 +218,7 @@ class Service(KubeObject):
     kind: str = "service"
 
     def path_fragment(self):
-        return f"services/{self.name}"
+        return f"service.{self.name}"
 
     @property
     def children(self) -> List["KubeObject"]:
@@ -240,6 +240,10 @@ class Service(KubeObject):
                 for p in ports
             ],
         }
+
+    def refresh(self):
+        # noop for services
+        pass
 
 
 class Cluster(KubeObject):
