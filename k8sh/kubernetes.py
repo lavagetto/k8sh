@@ -159,7 +159,18 @@ class Container(KubeObject):
         cmd = ["sudo", "nsenter", "-t", pid] + shlex.split(arg)
         rc = self._remote.run_sync(cmd)
         if rc != 0:
-            raise k8shError("Command {} exited with return code {}".format(cmd, rc))
+            raise k8shError("Command {} exited with return code {}".format(" ".join(cmd), rc))
+
+    def rootexec(self, arg: str):
+        """
+        Runs command as root within the container.
+        """
+        if self._remote is None:
+            raise k8shError("No remote host defined, impossible to execute.")
+        cmd = ["sudo", "docker", "exec", "--user", "root", self.ID] + shlex.split(arg)
+        rc = self._remote.run_sync(cmd)
+        if rc != 0:
+            raise k8shError("Command {} exited with return code {}".format(" ".join(cmd), rc))
 
     def tail(self, arg: str):
         """Gets the logs of the container"""

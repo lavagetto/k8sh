@@ -5,7 +5,7 @@ from typing import List, Optional
 
 import attr
 
-from k8sh import k8shError
+from k8sh import k8shError, red
 
 
 @attr.s
@@ -36,6 +36,10 @@ class RemoteCommand:
                 output = ssh.stdout.readline().decode().rstrip()
                 if output != "":
                     print(output)
+                if ssh.stderr is not None:
+                    err = ssh.stderr.readline().decode().rstrip()
+                    if err != "":
+                        print(red(err))
                 rc = ssh.poll()
             except KeyboardInterrupt:
                 # Manage ctrl-c
@@ -51,7 +55,11 @@ class RemoteCommand:
 
 @attr.s
 class Kubectl:
+    """Class that allows running kubectl on a remote or local cluster"""
+
+    # The name of the cluster
     cluster: str = attr.ib()
+    # The namespace we're acting on
     namespace: Optional[str] = attr.ib()
     remote: RemoteCommand = attr.ib()
     kubeconfig_fmt = "KUBECONFIG=/etc/kubernetes/{namespace}-{cluster}.config"

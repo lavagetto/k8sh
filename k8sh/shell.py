@@ -3,7 +3,7 @@ from typing import Optional
 
 import cmd2  # type: ignore
 
-from k8sh import blue, k8shConfigPath, k8shError, kubernetes, red, setup
+from k8sh import blue, k8shConfigPath, k8shError, kubernetes, red, setup, ConfigProfiles, Config
 from k8sh.exec import Kubectl, RemoteCommand
 
 CAT_NAV = "Kubernetes navigation"
@@ -17,7 +17,12 @@ class KubeCmd(cmd2.Cmd):
         self.current: kubernetes.KubeObject = kubernetes.KubeObject(
             "null", Kubectl("", "", self.remote), None
         )
+        self.config: ConfigProfiles
         super().__init__(*args)
+
+    def _switch_profile(self, config: Config):
+        self.remote = RemoteCommand(config.kubectl_host, config.ssh_opts)
+        Kubectl.kubeconfig_fmt = config.kubeconfig_format
 
     def _check_current(self, desired_type: Optional[str] = None):
         """Check we have a valid current object"""
@@ -73,6 +78,10 @@ class KubeCmd(cmd2.Cmd):
         Usage: use <cluster>
         Select the cluster to operate on.
         """
+        # Switch to the correct config profile
+        config = self.config.get(arg)
+        self._switch_profile(config)
+        # Now initialize the first cluster object.
         kubectl = Kubectl(arg, "", self.remote)
         self.current = kubernetes.Cluster(arg, kubectl)
 
@@ -204,6 +213,20 @@ class KubeCmd(cmd2.Cmd):
         except k8shError as e:
             print(red(str(e)))
 
+    @cmd2.with_category(CAT_CONT)
+    def do_sudo(self, arg):
+        """
+        Usage: sudo <command>
+        Context: container
+
+        Runs a command within the container, as root
+        """
+        try:
+            self._check_current("container")
+            self.current.rootexec(arg)
+        except k8shError as e:
+            print(red(str(e)))
+
     @cmd2.with_category(CAT_SERV)
     def do_view(self, arg):
         """
@@ -224,8 +247,8 @@ class KubeCmd(cmd2.Cmd):
 def from_configfile(path: str) -> KubeCmd:
     """Get a shell from a configuration file"""
     config = setup(path)
-    kubectl_remote = RemoteCommand(config.kubectl_host, config.ssh_opts)
-    Kubectl.kubeconfig_fmt = config.kubeconfig_format
+    kubectl_remote = RemoteCommand(config.default.kubectl_host, config.default.ssh_opts)
+    Kubectl.kubeconfig_fmt = config.default.kubeconfig_format
     sh = KubeCmd(kubectl_remote)
     return sh
 
