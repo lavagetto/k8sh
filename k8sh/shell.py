@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 from typing import Optional
 
 import cmd2  # type: ignore
@@ -12,12 +13,10 @@ CAT_SERV = "Service information"
 
 
 class KubeCmd(cmd2.Cmd):
-    def __init__(self, remote: RemoteCommand, *args):
+    def __init__(self, remote: RemoteCommand, config: ConfigProfiles, *args):
         self.remote: RemoteCommand = remote
-        self.current: kubernetes.KubeObject = kubernetes.KubeObject(
-            "null", Kubectl("", "", self.remote), None
-        )
-        self.config: ConfigProfiles
+        self.current: kubernetes.KubeObject = kubernetes.KubeObject("null", Kubectl("", "", self.remote), None)
+        self.config: ConfigProfiles = config
         super().__init__(*args)
 
     def _switch_profile(self, config: Config):
@@ -29,9 +28,7 @@ class KubeCmd(cmd2.Cmd):
         if self.current.kind == "":
             raise k8shError("Please select a cluster with 'use' first")
         if desired_type is not None and self.current.kind != desired_type:
-            raise k8shError(
-                "Invalid context: f{self.current.kind}, should be f{desired_type}"
-            )
+            raise k8shError("Invalid context: f{self.current.kind}, should be f{desired_type}")
 
     def cd(self, val: str):
         self._check_current()
@@ -53,6 +50,8 @@ class KubeCmd(cmd2.Cmd):
         # Find the cluster name
         c = self.current
         while c.kind != "cluster":
+            if c.parent is None:
+                raise k8shError(f"Found a {c.kind} object '{c.name}' without a parent. Something is very wrong.")
             c = c.parent
         cl = red(c.name)
         path = blue(self.current.path)
@@ -79,7 +78,7 @@ class KubeCmd(cmd2.Cmd):
         Select the cluster to operate on.
         """
         # Switch to the correct config profile
-        config = self.config.get(arg)
+        config = self.config.get(str(arg))
         self._switch_profile(config)
         # Now initialize the first cluster object.
         kubectl = Kubectl(arg, "", self.remote)
@@ -115,7 +114,10 @@ class KubeCmd(cmd2.Cmd):
         except k8shError:
             return []
         if text == "":
-            return [c.name for c in self.current.children]
+            return [c.path_fragment() for c in self.current.children]
+        elif text == "..":
+            base = ".."
+            to_suggest = text[3:]
         elif "/" in text:
             base, to_suggest = text.rsplit("/", 1)
         else:
@@ -127,9 +129,9 @@ class KubeCmd(cmd2.Cmd):
             if base != "":
                 self.cd(base)
             return [
-                os.path.join(base, c.name)
+                os.path.join(base, c.path_fragment())
                 for c in self.current.children
-                if c.name.startswith(to_suggest)
+                if c.path_fragment().startswith(to_suggest)
             ]
         except k8shError:
             return []
@@ -244,12 +246,13 @@ class KubeCmd(cmd2.Cmd):
             print(red(str(e)))
 
 
-def from_configfile(path: str) -> KubeCmd:
+def from_configfile(path: Path) -> KubeCmd:
     """Get a shell from a configuration file"""
     config = setup(path)
+    # Configure our remote with the defaults.
     kubectl_remote = RemoteCommand(config.default.kubectl_host, config.default.ssh_opts)
     Kubectl.kubeconfig_fmt = config.default.kubeconfig_format
-    sh = KubeCmd(kubectl_remote)
+    sh = KubeCmd(kubectl_remote, config)
     return sh
 
 

@@ -7,7 +7,6 @@ allows you to drill down from cluster to namespace, to pods/deployments, and fro
 to individual containers, allowing you to inspect them and execute processes in
 their namespaces.
 """
-import os
 import warnings
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -21,15 +20,14 @@ from xdg import XDG_CONFIG_HOME  # type: ignore
 @attr.s
 class Config:
     kubectl_host: Optional[str] = attr.ib(default=None, kw_only=True)
-    kubeconfig_format: str = attr.ib(
-        default="KUBECONFIG=/etc/kubernetes/{namespace}-{cluster}.config", kw_only=True
-    )
+    kubeconfig_format: str = attr.ib(default="KUBECONFIG=/etc/kubernetes/{namespace}-{cluster}.config", kw_only=True)
     ssh_opts: Optional[List] = attr.ib(default=None, kw_only=True)
 
 
 @attr.s
 class ConfigProfiles:
     """Class containing the configuration for your clusters"""
+
     default: Config = attr.ib()
     _profiles: Dict[str, Config] = attr.ib(default=None)
 
@@ -37,16 +35,15 @@ class ConfigProfiles:
         return self._profiles.get(profile, self.default)
 
 
-def setup(configfile: str) -> ConfigProfiles:
+def setup(configfile: Path) -> ConfigProfiles:
     """Load configfile. Setup execution"""
     # Initialize colorama
     init()
     cfg = {}
     # Load a yaml config file, else just return the default configuration.
-    if os.path.isfile(configfile):
+    if configfile.exists():
         try:
-            with open(configfile, "r") as fh:
-                cfg = yaml.safe_load(fh)
+            cfg = yaml.safe_load(configfile.read_text())
         except Exception:
             print(red("Bad configuration file, ignoring it."))
     profiles = {}
@@ -77,8 +74,6 @@ def k8shConfigPath() -> Path:
     if xdgpath.is_file():
         return xdgpath
     elif legacypath.is_file():
-        warnings.warn(
-            f"Config path {legacypath} is deprecated, please use {xdgpath} instead"
-        )
+        warnings.warn(f"Config path {legacypath} is deprecated, please use {xdgpath} instead")
         return legacypath
     return xdgpath
