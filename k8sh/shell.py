@@ -78,7 +78,7 @@ class KubeCmd(cmd2.Cmd):
         Select the cluster to operate on.
         """
         # Switch to the correct config profile
-        config = self.config.get(arg)
+        config = self.config.get(str(arg))
         self._switch_profile(config)
         # Now initialize the first cluster object.
         kubectl = Kubectl(arg, "", self.remote)
