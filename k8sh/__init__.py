@@ -10,7 +10,7 @@ their namespaces.
 import os
 import warnings
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 import attr
 import yaml
@@ -27,7 +27,18 @@ class Config:
     ssh_opts: Optional[List] = attr.ib(default=None, kw_only=True)
 
 
-def setup(configfile: str) -> Config:
+@attr.s
+class ConfigProfiles:
+    """Class containing the configuration for your clusters"""
+    default: Config = attr.ib()
+    _profiles: Dict[str, Config] = attr.ib(default=None)
+
+    def get(self, profile: str) -> Config:
+        return self._profiles.get(profile, self.default)
+
+
+def setup(configfile: str) -> ConfigProfiles:
+    """Load configfile. Setup execution"""
     # Initialize colorama
     init()
     cfg = {}
@@ -38,7 +49,13 @@ def setup(configfile: str) -> Config:
                 cfg = yaml.safe_load(fh)
         except Exception:
             print(red("Bad configuration file, ignoring it."))
-    return Config(**cfg)
+    profiles = {}
+    if "profiles" in cfg:
+        for name, conf in cfg["profiles"].items():
+            profiles[name] = Config(**conf)
+        del cfg["profiles"]
+
+    return ConfigProfiles(Config(**cfg), profiles)
 
 
 def red(txt: str):
