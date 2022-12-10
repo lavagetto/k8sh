@@ -13,10 +13,10 @@ CAT_SERV = "Service information"
 
 
 class KubeCmd(cmd2.Cmd):
-    def __init__(self, remote: RemoteCommand, *args):
+    def __init__(self, remote: RemoteCommand, config: ConfigProfiles, *args):
         self.remote: RemoteCommand = remote
         self.current: kubernetes.KubeObject = kubernetes.KubeObject("null", Kubectl("", "", self.remote), None)
-        self.config: ConfigProfiles
+        self.config: ConfigProfiles = config
         super().__init__(*args)
 
     def _switch_profile(self, config: Config):
@@ -249,9 +249,10 @@ class KubeCmd(cmd2.Cmd):
 def from_configfile(path: Path) -> KubeCmd:
     """Get a shell from a configuration file"""
     config = setup(path)
+    # Configure our remote with the defaults.
     kubectl_remote = RemoteCommand(config.default.kubectl_host, config.default.ssh_opts)
     Kubectl.kubeconfig_fmt = config.default.kubeconfig_format
-    sh = KubeCmd(kubectl_remote)
+    sh = KubeCmd(kubectl_remote, config)
     return sh
 
 

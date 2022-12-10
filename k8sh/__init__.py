@@ -7,7 +7,6 @@ allows you to drill down from cluster to namespace, to pods/deployments, and fro
 to individual containers, allowing you to inspect them and execute processes in
 their namespaces.
 """
-import os
 import warnings
 from pathlib import Path
 from typing import Dict, List, Optional
