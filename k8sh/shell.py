@@ -28,7 +28,7 @@ class KubeCmd(cmd2.Cmd):
         if self.current.kind == "":
             raise k8shError("Please select a cluster with 'use' first")
         if desired_type is not None and self.current.kind != desired_type:
-            raise k8shError("Invalid context: f{self.current.kind}, should be f{desired_type}")
+            raise k8shError(f"Invalid context: {self.current.kind}, should be f{desired_type}")
 
     def cd(self, val: str):
         self._check_current()

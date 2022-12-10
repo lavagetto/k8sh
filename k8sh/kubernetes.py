@@ -235,7 +235,7 @@ class Service(KubeObject):
                 {
                     "name": p["name"],
                     "target": p["targetPort"],
-                    "nodeport": p["nodePort"],
+                    "nodeport": p.get("nodePort", None),
                 }
                 for p in ports
             ],

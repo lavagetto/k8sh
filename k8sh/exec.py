@@ -13,9 +13,9 @@ class RemoteCommand:
     host: Optional[str] = attr.ib()
     ssh_opts: Optional[List[str]] = attr.ib(default=None)
 
-    def _cmd(self, command):
+    def _cmd(self, command: List[str]) -> List[str]:
         if self.host is None:
-            return command
+            return ["/bin/bash", "-c", shlex.join(command)]
         else:
             if self.ssh_opts is None:
                 opts = []
@@ -25,32 +25,42 @@ class RemoteCommand:
 
     def run_sync(self, command: List[str]) -> int:
         """Runs a command on a remote host, and streams the output."""
-        ssh = subprocess.Popen(
-            self._cmd(command), stdout=subprocess.PIPE, stderr=subprocess.PIPE
-        )
+        ssh = subprocess.Popen(self._cmd(command), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         rc = None
         while rc is None:
             try:
-                if ssh.stdout is None:
-                    continue
-                output = ssh.stdout.readline().decode().rstrip()
-                if output != "":
-                    print(output)
-                if ssh.stderr is not None:
-                    err = ssh.stderr.readline().decode().rstrip()
-                    if err != "":
-                        print(red(err))
+                self._stdout(ssh)
+                self._stderr(ssh)
                 rc = ssh.poll()
             except KeyboardInterrupt:
                 # Manage ctrl-c
                 ssh.terminate()
                 # We assume this is what the user intended, no reason to signal error.
                 rc = 0
+
+        if ssh.stdout is not None:
+            print(ssh.stdout.read().decode().rstrip())
+        if ssh.stderr is not None:
+            print(red(ssh.stderr.read().decode().rstrip()))
         return rc
 
     def run(self, command: List[str]) -> subprocess.CompletedProcess:
         """Run a command via ssh."""
         return subprocess.run(self._cmd(command), capture_output=True)
+
+    def _stdout(self, proc: subprocess.Popen):
+        if proc.stdout is None:
+            return
+        out = proc.stdout.readline().decode().rstrip()
+        if out != "":
+            print(out)
+
+    def _stderr(self, proc: subprocess.Popen):
+        if proc.stderr is None:
+            return
+        out = proc.stderr.readline().decode().rstrip()
+        if out != "":
+            print(red(out))
 
 
 @attr.s
@@ -68,20 +78,14 @@ class Kubectl:
         """Returns the kubeconfig file path."""
         if admin:
             # If the command is to be run as admin, we search for the admin kubeconfig
-            return "sudo " + self.kubeconfig_fmt.format(
-                namespace="admin", cluster=self.cluster
-            )
+            return "sudo " + self.kubeconfig_fmt.format(namespace="admin", cluster=self.cluster)
         else:
-            return self.kubeconfig_fmt.format(
-                namespace=self.namespace, cluster=self.cluster
-            )
+            return self.kubeconfig_fmt.format(namespace=self.namespace, cluster=self.cluster)
 
     def _kubectl(self, command: str, admin: bool = False) -> List[str]:
         """Returns the full command array for a kubectl invocation."""
         if self.namespace is not None:
-            _cmd = "{} kubectl -n {} {}".format(
-                self._kubeconfig(admin), self.namespace, command
-            )
+            _cmd = "{} kubectl -n {} {}".format(self._kubeconfig(admin), self.namespace, command)
         else:
             _cmd = "{} kubectl {}".format(self._kubeconfig(admin), command)
         return shlex.split(_cmd)
