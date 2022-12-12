@@ -81,6 +81,13 @@ def test_path_change(hierarchy):
     assert c.cd("/namespace/service.service") == (cl, "namespace/service.service")
 
 
+def test_match(pod):
+    """Test matching works"""
+    assert pod.match("pod.a*")
+    assert pod.match("pod.apod")
+    assert not pod.match("service.*")
+
+
 # Pod-specific tests.
 def test_pod_children(pod):
     """Test containers are correctly initialized"""
