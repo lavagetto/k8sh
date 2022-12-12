@@ -27,3 +27,6 @@ __pycache__/
 flycheck_*.el
 .projectile
 .dir-locals.el
+
+# VScodium
+.vscode

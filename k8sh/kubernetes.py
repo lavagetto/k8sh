@@ -1,3 +1,5 @@
+import glob
+import fnmatch
 import os
 import shlex
 from typing import Dict, List, Optional, Tuple
@@ -30,6 +32,13 @@ class KubeObject:
     def path_fragment(self) -> str:
         """The path fragment for this object"""
         return self.name
+
+    def match(self, maybe_glob: str) -> bool:
+        """Checks if the current object path fragment matches a glob or an exact match"""
+        if not glob.has_magic(maybe_glob):
+            return self.path_fragment() == maybe_glob
+        else:
+            return fnmatch.fnmatch(self.path_fragment(), maybe_glob)
 
     @property
     def root(self) -> "KubeObject":

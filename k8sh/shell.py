@@ -11,6 +11,9 @@ CAT_NAV = "Kubernetes navigation"
 CAT_CONT = "Container-level debugging"
 CAT_SERV = "Service information"
 
+# Maximum number of queries to perform for any command.
+MAX_QUERY_LENGTH = 15
+
 
 class KubeCmd(cmd2.Cmd):
     def __init__(self, remote: RemoteCommand, config: ConfigProfiles, *args):
@@ -36,6 +39,7 @@ class KubeCmd(cmd2.Cmd):
             # Rewind to cluster level
             while self.current.parent is not None:
                 self.current = self.current.parent
+                print(self.current)
             return
         next_element = self.current
         while val != "":
@@ -143,15 +147,61 @@ class KubeCmd(cmd2.Cmd):
     def do_ls(self, arg):
         """
         Usage: ls
-        Context: All but container
+        Context: All but container, service
 
         Lists all the properties at the current hierarchy level.
 
         For example, within a namespace, pods will be listed. In a pod,
         containers will be shown.
         """
-        for el in self.current.children:
-            print(el.path_fragment())
+        queries_performed = 0
+        # Simple case: no arguments
+        if arg.args == "":
+            for obj in self.current.children:
+                print(obj.path_fragment())
+            return
+        # If we have an argument, we have various cases to consider:
+        # 1 - is this a glob?
+        # 2 - is this a multi-level search?
+        search = arg.args
+        ptr = [self.current]
+        # Split the path in multiple
+        for part in search.split("/"):
+            matches = []
+            # We are listing a directory, just return all elements
+            if part == "":
+                for obj in ptr:
+                    matches.extend(obj.children)
+            elif part == "..":
+                for obj in ptr:
+                    if obj.parent is not None:
+                        matches.append(obj.parent)
+            else:
+                # Non-empty fragment
+                for obj in ptr:
+                    queries_performed += 1
+                    for child in obj.children:
+                        if child.match(part):
+                            matches.append(child)
+
+            # If we found no matches, stop
+            if not matches:
+                return
+            # If we performed more queries than the limit, warn the user, return
+            if queries_performed > MAX_QUERY_LENGTH:
+                print(red("Your request is too wide; to avoid disruptions to the API, you should narrow your pattern."))
+                return
+            # Finished finding matches, move the pointer
+            ptr = matches
+        # Now print the results.
+        to_remove = self.current.path
+        if not to_remove.endswith("/"):
+            to_remove += "/"
+        for obj in ptr:
+            if obj.kind == "cluster":
+                print("/")
+            else:
+                print(obj.path.replace(to_remove, "", 1))
 
     @cmd2.with_category(CAT_CONT)
     def do_ps(self, arg):
