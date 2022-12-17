@@ -138,7 +138,7 @@ class Container(KubeObject):
     _remote: Optional[RemoteCommand] = attr.ib(init=False, default=None)
 
     def set_remote(self, hostname: str):
-        self._remote = RemoteCommand(hostname, self.kubectl.remote.ssh_opts)
+        self._remote = RemoteCommand(hostname, self.kubectl.remote.ssh_opts, "")
 
     @property
     def children(self) -> List["KubeObject"]:
@@ -152,6 +152,8 @@ class Container(KubeObject):
         """
         Shows all processes running inside the container
         """
+        if self._remote is None:
+            raise k8shError("No remote host defined, impossible to execute.")
         res = self._remote.run_sync(["sudo", "docker", "top", self.ID])
         if res != 0:
             raise k8shError("Executing docker top on f{self.current.parent.hostname} exited with error code f{res}")

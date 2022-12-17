@@ -23,8 +23,12 @@ class K8shTester(cmd2_ext_test.ExternalTestMixin, KubeCmd):
 def minikube():
     """Provide a KubeCmd that connects to minikube"""
     kubeconfig_path = Path.home() / ".kube" / "config"
-    config = ConfigProfiles(Config(kubectl_host=None, kubeconfig_format=f"KUBECONFIG={kubeconfig_path}"), {})
+    config = ConfigProfiles(
+        Config(kubectl_host=None, kubeconfig_format=f"KUBECONFIG={kubeconfig_path}", ssh_controlmaster_path=""), {}
+    )
     remote = mock.MagicMock(spec=ex.RemoteCommand)
+    remote.host = config.default.kubectl_host
+    remote.ssh_opts = config.default.ssh_opts
     ex.Kubectl.kubeconfig_fmt = config.default.kubeconfig_format
     app = K8shTester(remote, config)
     app.fixture_setup()
@@ -67,8 +71,10 @@ def objtree(minikube):
 def test_use(minikube):
     """Test the use command works as expected"""
     assert minikube.prompt == "NONE (root) $ "
+    minikube.app_cmd("set debug true")
     out = minikube.app_cmd("use minikube")
     assert isinstance(out, CommandResult)
+    assert out.stderr == ""
     assert isinstance(minikube.current, kubernetes.Cluster)
     assert minikube.current.name == "minikube"
     assert "minikube" in minikube.prompt

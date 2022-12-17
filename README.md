@@ -23,6 +23,7 @@ configuration keys:
   locally, you can omit the setting
 * `kubeconfig_format` a python format string that allows k8sh to pick a kubeconfig file to use with kubectl. Can depend on the cluster you're connecting to, and the namespace. So for example, if you want to use the same kubeconfig for all namespaces, just provide a constant string, like `/etc/kubeconfig`. If you prefer to use a specific configuration for every namespace/cluster, you need to provide a python format string including the terms, like `/etc/kube/{cluster}/{namespace}.kubeconfig`. Defaults to `/etc/kubernetes/{namespace}-{cluster}.config` because that's what I use in production.
 * `ssh_opts` Options to add to all the ssh connections, as a list.
+* `ssh_controlmaster_path` string, if not empty, k8sh uses a control master connection to the kubectl host to speed up its operations. Defaults to `/run/user/%i/ssh-%C` which should work on any linux machine.
 
 You can also add different configurations for different clusters by using the `profiles` configuration stanza and adding a key-value mapping of cluster names and
 configuration profiles.

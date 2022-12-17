@@ -23,7 +23,12 @@ class KubeCmd(cmd2.Cmd):
         super().__init__(*args)
 
     def _switch_profile(self, config: Config):
-        self.remote = RemoteCommand(config.kubectl_host, config.ssh_opts)
+        # If the configuration changes, set up a new remote
+        if self.remote.host != config.kubectl_host or self.remote.ssh_opts != config.ssh_opts:
+            self.remote.close()
+            self.remote = RemoteCommand(config.kubectl_host, config.ssh_opts, config.ssh_controlmaster_path)
+            # Ensure the master path has an active connection to funnel our commands through
+            self.remote.open()
         Kubectl.kubeconfig_fmt = config.kubeconfig_format
 
     def _check_current(self, desired_type: Optional[str] = None):
@@ -300,7 +305,10 @@ def from_configfile(path: Path) -> KubeCmd:
     """Get a shell from a configuration file"""
     config = setup(path)
     # Configure our remote with the defaults.
-    kubectl_remote = RemoteCommand(config.default.kubectl_host, config.default.ssh_opts)
+    kubectl_remote = RemoteCommand(
+        config.default.kubectl_host, config.default.ssh_opts, config.default.ssh_controlmaster_path
+    )
+    kubectl_remote.open()
     Kubectl.kubeconfig_fmt = config.default.kubeconfig_format
     sh = KubeCmd(kubectl_remote, config)
     return sh
@@ -310,3 +318,4 @@ def main():
     configfile = k8shConfigPath()
     sh = from_configfile(configfile)
     sh.cmdloop()
+    sh.remote.close()
