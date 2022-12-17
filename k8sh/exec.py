@@ -12,16 +12,40 @@ from k8sh import k8shError, red
 class RemoteCommand:
     host: Optional[str] = attr.ib()
     ssh_opts: Optional[List[str]] = attr.ib(default=None)
+    master_path: str = attr.ib(default="")
+    _master: Optional[subprocess.Popen] = attr.ib(default=None)
+
+    def open(self):
+        """Open a master connection if not already initiated."""
+        if self.master_path == "":
+            return
+        if self.host is None or self._master is not None:
+            return
+        self._master = subprocess.Popen(
+            ["ssh", "-o", "ControlMaster=auto", "-o", f"ControlPath={self.master_path}", "-MN", self.host]
+        )
+
+    def close(self):
+        """Close a master connection if present."""
+        if self._master is None:
+            return
+        self._master.terminate()
+        self._master = None
 
     def _cmd(self, command: List[str]) -> List[str]:
         if self.host is None:
             return ["/bin/bash", "-c", shlex.join(command)]
+
+        if self.ssh_opts is None:
+            opts = []
         else:
-            if self.ssh_opts is None:
-                opts = []
-            else:
-                opts = self.ssh_opts
-            return ["ssh", "-T", self.host] + opts + command
+            opts = self.ssh_opts
+        cmd = ["ssh", "-T"]
+        if self._master is not None:
+            cmd.extend(["-o", "ControlMaster=no", "-o", f"ControlPath={self.master_path}"])
+        cmd.append(self.host)
+
+        return cmd + opts + command
 
     def run_sync(self, command: List[str]) -> int:
         """Runs a command on a remote host, and streams the output."""

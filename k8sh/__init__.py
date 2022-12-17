@@ -22,6 +22,7 @@ class Config:
     kubectl_host: Optional[str] = attr.ib(default=None, kw_only=True)
     kubeconfig_format: str = attr.ib(default="KUBECONFIG=/etc/kubernetes/{namespace}-{cluster}.config", kw_only=True)
     ssh_opts: Optional[List] = attr.ib(default=None, kw_only=True)
+    ssh_controlmaster_path: str = attr.ib(default="/run/user/%i/ssh-%C", kw_only=True)
 
 
 @attr.s
