@@ -1,6 +1,6 @@
 import os
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 import cmd2  # type: ignore
 
@@ -36,7 +36,7 @@ class KubeCmd(cmd2.Cmd):
         if self.current.kind == "":
             raise k8shError("Please select a cluster with 'use' first")
         if desired_type is not None and self.current.kind != desired_type:
-            raise k8shError(f"Invalid context: {self.current.kind}, should be f{desired_type}")
+            raise k8shError(f"Invalid context: {self.current.kind}, should be {desired_type}")
 
     def cd(self, val: str):
         self._check_current()
@@ -50,6 +50,47 @@ class KubeCmd(cmd2.Cmd):
         while val != "":
             next_element, val = next_element.cd(val)
         self.current = next_element
+
+    def ls(self, arg: cmd2.Statement) -> List[kubernetes.KubeObject]:
+        self._check_current()
+        queries_performed = 0
+        # Simple case: no arguments
+        if arg.args == "":
+            return self.current.children
+        # If we have an argument, we have various cases to consider:
+        # 1 - is this a glob?
+        # 2 - is this a multi-level search?
+        search = arg.args
+        ptr = [self.current]
+        # Split the path in multiple
+        for part in search.split("/"):
+            matches: List[kubernetes.KubeObject] = []
+            # We are listing a directory, just return all elements
+            if part == "":
+                for obj in ptr:
+                    matches.extend(obj.children)
+            elif part == "..":
+                for obj in ptr:
+                    if obj.parent is not None:
+                        matches.append(obj.parent)
+            else:
+                # Non-empty fragment
+                for obj in ptr:
+                    queries_performed += 1
+                    for child in obj.children:
+                        if child.match(part):
+                            matches.append(child)
+
+            # If we found no matches, stop
+            if not matches:
+                return []
+            # If we performed more queries than the limit, warn the user, return
+            if queries_performed > MAX_QUERY_LENGTH:
+                print(red("Your request is too wide; to avoid disruptions to the API, you should narrow your pattern."))
+                return []
+            # Finished finding matches, move the pointer
+            ptr = matches
+        return ptr
 
     def _prompt(self):
         layer = self.current.kind
@@ -117,7 +158,7 @@ class KubeCmd(cmd2.Cmd):
         except k8shError as e:
             print(red(str(e)))
 
-    def complete_cd(self, text, line, start_index, end_index):
+    def complete_cd(self, text: str, line, start_index, end_index):
         try:
             self._check_current()
         except k8shError:
@@ -129,6 +170,9 @@ class KubeCmd(cmd2.Cmd):
             to_suggest = text[3:]
         elif "/" in text:
             base, to_suggest = text.rsplit("/", 1)
+            # Special case: the "/" is at the start of the path
+            if base == "":
+                base = "/"
         else:
             base = ""
             to_suggest = text
@@ -159,50 +203,17 @@ class KubeCmd(cmd2.Cmd):
         For example, within a namespace, pods will be listed. In a pod,
         containers will be shown.
         """
-        queries_performed = 0
-        # Simple case: no arguments
-        if arg.args == "":
-            for obj in self.current.children:
-                print(obj.path_fragment())
+        try:
+            listed = self.ls(arg)
+        except k8shError as e:
+            print(red(str(e)))
             return
-        # If we have an argument, we have various cases to consider:
-        # 1 - is this a glob?
-        # 2 - is this a multi-level search?
-        search = arg.args
-        ptr = [self.current]
-        # Split the path in multiple
-        for part in search.split("/"):
-            matches = []
-            # We are listing a directory, just return all elements
-            if part == "":
-                for obj in ptr:
-                    matches.extend(obj.children)
-            elif part == "..":
-                for obj in ptr:
-                    if obj.parent is not None:
-                        matches.append(obj.parent)
-            else:
-                # Non-empty fragment
-                for obj in ptr:
-                    queries_performed += 1
-                    for child in obj.children:
-                        if child.match(part):
-                            matches.append(child)
 
-            # If we found no matches, stop
-            if not matches:
-                return
-            # If we performed more queries than the limit, warn the user, return
-            if queries_performed > MAX_QUERY_LENGTH:
-                print(red("Your request is too wide; to avoid disruptions to the API, you should narrow your pattern."))
-                return
-            # Finished finding matches, move the pointer
-            ptr = matches
         # Now print the results.
         to_remove = self.current.path
         if not to_remove.endswith("/"):
             to_remove += "/"
-        for obj in ptr:
+        for obj in listed:
             if obj.kind == "cluster":
                 print("/")
             else:

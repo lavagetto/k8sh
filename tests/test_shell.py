@@ -1,13 +1,15 @@
+import subprocess
 from pathlib import Path
-from unittest import mock
-
 from typing import Optional
+from unittest import mock
 
 import cmd2_ext_test
 import pytest
-from cmd2 import CommandResult
+from cmd2 import CommandResult, Statement
 
-from k8sh import Config, ConfigProfiles, exec as ex, kubernetes
+from k8sh import Config, ConfigProfiles
+from k8sh import exec as ex
+from k8sh import kubernetes, red, shell
 from k8sh.shell import KubeCmd
 
 
@@ -51,6 +53,11 @@ def _getobj(kind: str, name: str, parent: Optional[kubernetes.KubeObject] = None
     obj._children = []
     if parent is not None:
         parent._children.append(obj)
+    if obj.kind == "container":
+        # This allows us to later test calls to obj.kubectl.remote in
+        # container context
+        obj._remote = kubectl.remote
+        obj.ID = 123
     return obj
 
 
@@ -95,6 +102,9 @@ def test_cd(objtree):
     # cd to an inexistent property will go nowhere
     objtree.app_cmd("cd pinkunicorn")
     assert objtree.current.name == "prom-dns-exporter"
+    # cd without arguments brings us back to the cluster level
+    objtree.app_cmd("cd")
+    assert objtree.current.kind == "cluster"
 
 
 @pytest.mark.parametrize(
@@ -112,3 +122,134 @@ def test_ls(arg, expected, objtree):
     """Test the ls functionality"""
     out = objtree.app_cmd(f"ls {arg}".rstrip())
     assert out.stdout.rstrip() == expected
+
+
+def test_switch_profile(minikube):
+    """Test that switching profile will switch the remote object if needed."""
+    minikube.config.get = mock.MagicMock(return_value=Config(kubectl_host="test"))
+    mocker = minikube.remote
+    with mock.patch("k8sh.shell.RemoteCommand.open") as canopener:
+        minikube.app_cmd("use test")
+        # The original remote has no kubectl_host, we're now passing a configuration containing a remote host
+        mocker.close.assert_called_with()
+        # The new one has been "opened"
+        canopener.assert_called_with()
+
+
+def test_cmd_before_use(minikube):
+    """Test that if we invoke any command before 'use' a warning message will be emitted."""
+    minikube.app_cmd("set debug true")
+    for cmd in ["exec ls /", "view", "tail", "cd /test", "ls"]:
+        out = minikube.app_cmd(cmd)
+        assert out.stderr == ""
+        assert out.stdout.rstrip() == red("Please select a cluster with 'use' first")
+
+
+def test_exec_bad_context(objtree):
+    """Test that context-dependent commands error out if used in the wrong context"""
+    objtree.app_cmd("set debug true")
+    out = objtree.app_cmd("exec ls /")
+    assert "Invalid context:" in out.stdout.rstrip()
+
+
+def test_complete_cd(objtree):
+    """Test cd autocompletion"""
+    # Case 1: no text
+    assert ["default", "kube-system"] == objtree.complete_cd("", 0, 0, 0)
+    # Case 2: .. in the path
+    objtree.app_cmd("cd default")
+    assert ["../kube-system"] == objtree.complete_cd("../ku", 0, 0, 0)
+    # Case 3: / in the path
+    assert ["/default"] == objtree.complete_cd("/d", 0, 0, 0)
+    # Case 4: default
+    assert ["pod.failoid"] == objtree.complete_cd("pod.f", 0, 0, 0)
+    # Case 5: non-existent completion
+    assert [] == objtree.complete_cd("pink", 0, 0, 0)
+
+
+def test_ls_max_queries(objtree):
+    """Test ls query protections"""
+    orig_q_length = shell.MAX_QUERY_LENGTH
+    shell.MAX_QUERY_LENGTH = 1
+    arg = Statement("*/pod.*", "ls */pod.*", "ls")
+    assert objtree.ls(arg) == []
+    shell.MAX_QUERY_LENGTH = orig_q_length
+
+
+def test_ps(objtree):
+    """Test the ps command."""
+    # Check context is protected
+    out = objtree.app_cmd("ps")
+    assert "Invalid context:" in out.stdout
+    objtree.app_cmd("cd default/pod.failoid/http")
+    # Now run ps, verify it's doing the right thing
+    out = objtree.app_cmd("ps")
+    assert "Invalid context:" not in out.stdout
+    objtree.current._remote.run_sync.assert_called_with(["sudo", "docker", "top", 123])
+
+
+def test_tail(objtree):
+    """Test the tail command."""
+    # Check context is protected
+    out = objtree.app_cmd("tail")
+    assert "Invalid context:" in out.stdout
+    objtree.app_cmd("cd default/pod.failoid/http")
+    objtree.app_cmd("tail -f")
+    objtree.current.kubectl.remote.run_sync.assert_called_with(
+        [
+            objtree.current.kubectl.kubeconfig_fmt.format("minikube", "default"),
+            "kubectl",
+            "-n",
+            "default",
+            "logs",
+            "-f",
+            "failoid",
+            "http",
+        ]
+    )
+
+
+def test_nsenter(objtree):
+    """Test the nsenter command"""
+    out = objtree.app_cmd("nsenter -n telnet localhost 25")
+    assert "Invalid context:" in out.stdout
+    objtree.app_cmd("cd default/pod.failoid/http")
+    # We need to account for two calls to the remote:
+    # The first to get the PID of the container,
+    # the second to execute nsenter.
+    objtree.current.kubectl.remote.run.return_value = subprocess.CompletedProcess("test", 0, b"456")
+    objtree.current.kubectl.remote.run_sync.return_value = subprocess.CompletedProcess("test", 0, b"test output")
+    # This also verifies the pipe is interpreted by cmd2
+    objtree.app_cmd("nsenter -n telnet localhost 25 | grep pinkunicorn")
+    objtree.current.kubectl.remote.run.assert_called_with(
+        ["sudo", "docker", "inspect", "-f", "'{{.State.Pid}}'", 123],
+    )
+    objtree.current.kubectl.remote.run_sync.assert_called_with(
+        ["sudo", "nsenter", "-t", "456", "-n", "telnet", "localhost", "25"],
+    )
+
+
+def test_exec(objtree):
+    """Test the exec command"""
+    # Check context is protected
+    out = objtree.app_cmd("exec ls")
+    assert "Invalid context:" in out.stdout
+    objtree.app_cmd("cd default/pod.failoid/http")
+    objtree.app_cmd("exec /bin/bash -c 'for i in ls /srv/app/*.jar; do sha256sum $i; done'")
+    objtree.current.kubectl.remote.run_sync.assert_called_with(
+        [
+            "sudo",
+            objtree.current.kubectl.kubeconfig_fmt.format("minikube", "default"),
+            "kubectl",
+            "-n",
+            "default",
+            "exec",
+            "failoid",
+            "-c",
+            "http",
+            "--",
+            "/bin/bash",
+            "-c",
+            "for i in ls /srv/app/*.jar; do sha256sum $i; done",
+        ]
+    )
