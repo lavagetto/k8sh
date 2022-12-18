@@ -10,6 +10,7 @@ from k8sh.exec import Kubectl, RemoteCommand
 CAT_NAV = "Kubernetes navigation"
 CAT_CONT = "Container-level debugging"
 CAT_SERV = "Service information"
+CAT_ADMIN = "Kubernetes administration"
 
 # Maximum number of queries to perform for any command.
 MAX_QUERY_LENGTH = 15
@@ -308,6 +309,22 @@ class KubeCmd(cmd2.Cmd):
             data = self.current.get()
             for port in data["ports"]:
                 print(f"{port['name']}:\t{port['nodeport']}->{port['target']}")
+        except k8shError as e:
+            print(red(str(e)))
+
+    @cmd2.with_category(CAT_ADMIN)
+    def do_eventlog(self, arg: cmd2.Statement):
+        """
+        Usage: eventlog
+        Context: any
+
+        Shows the events for the pertinent context,
+        sorted by event time.
+        """
+        try:
+            self._check_current()
+            # TODO: make this an argument when we don't want to support old k8s versions
+            self.current.eventlog(".metadata.creationTimestamp")
         except k8shError as e:
             print(red(str(e)))
 
