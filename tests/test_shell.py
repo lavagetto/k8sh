@@ -253,3 +253,18 @@ def test_exec(objtree):
             "for i in ls /srv/app/*.jar; do sha256sum $i; done",
         ]
     )
+
+
+def test_eventlog(objtree):
+    """Test fetching the eventlog"""
+    # Test 1: in a namespace context we only get events for that ns
+    objtree.app_cmd("cd default")
+    objtree.current.kubectl.run_sync = mock.MagicMock(return_value=subprocess.CompletedProcess("test", 0))
+    objtree.app_cmd("eventlog")
+    objtree.current.kubectl.run_sync.assert_called_with("get events --sortBy='.metadata.creationTimestamp'")
+    # Test 2: in cluster context, the call should add -A and be an admin call.
+    objtree.app_cmd("cd ..")
+    assert objtree.current.kind == "cluster"
+    objtree.current.kubectl.run_sync = mock.MagicMock(return_value=subprocess.CompletedProcess("test", 0))
+    objtree.app_cmd("eventlog")
+    objtree.current.kubectl.run_sync.assert_called_with("get events --sortBy='.metadata.creationTimestamp' -A", True)

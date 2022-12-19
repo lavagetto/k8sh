@@ -4,7 +4,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="k8sh",
-    version="0.1",
+    version="0.9.0",
     description="Interactive shell for kubernetes",
     author="Giuseppe Lavagetto",
     author_email="lavagetto@gmail.com",
@@ -21,8 +21,9 @@ setup(
         "Intended Audience :: System Administrators",
         "Operating System :: POSIX :: Linux",
         "Programming Language :: Python :: 3",
-        "Programming Language :: Python :: 3.6",
-        "Programming Language :: Python :: 3.7",
+        "Programming Language :: Python :: 3.8",
+        "Programming Language :: Python :: 3.9",
+        "Programming Language :: Python :: 3.10",
         "Topic :: System :: Clustering",
     ],
 )

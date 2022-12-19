@@ -93,6 +93,12 @@ class KubeObject:
         hierarchy.reverse()
         return os.path.join(*hierarchy)
 
+    def eventlog(self, sort_by: str = ".lastTimestamp"):
+        """Read the events log, sorting by a provided key (by default, by timestamp)."""
+        rc = self.kubectl.run_sync(f"get events --sortBy='{sort_by}'")
+        if rc != 0:
+            raise k8shError("Could not read the event log")
+
 
 @attr.s
 class Pod(KubeObject):
@@ -280,3 +286,11 @@ class Cluster(KubeObject):
 
     def refresh(self):
         self._children = None
+
+    def eventlog(self, sort_by: str = ".lastTimestamp"):
+        """Get all events on the current cluster."""
+        # We want the events for all namespaces at cluster level.
+        # So: run as admin, append -A
+        rec = self.kubectl.run_sync(f"get events --sortBy='{sort_by}' -A", True)
+        if rec != 0:
+            raise k8shError("Could not read the event log")
