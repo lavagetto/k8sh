@@ -268,3 +268,16 @@ def test_eventlog(objtree):
     objtree.current.kubectl.run_sync = mock.MagicMock(return_value=subprocess.CompletedProcess("test", 0))
     objtree.app_cmd("eventlog")
     objtree.current.kubectl.run_sync.assert_called_with("get events --sortBy='.metadata.creationTimestamp' -A", True)
+
+
+def test_delete(objtree):
+    """Test deleting a pod."""
+    objtree.app_cmd("cd default")
+    objtree.current.kubectl.run = mock.MagicMock(return_value=subprocess.CompletedProcess("test", 0))
+    objtree.app_cmd("rm pod.failoid")
+    objtree.current.kubectl.run.assert_called_with("delete pod pod.failoid", True)
+    # verify the pod isn't in the output of ls anymore
+    out = objtree.app_cmd("ls")
+    assert "pod.failoid" not in out.stdout
+    output = objtree.app_cmd("rm pod.nothere")
+    assert "error: no such pod" in output.stdout
