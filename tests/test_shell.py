@@ -272,12 +272,14 @@ def test_eventlog(objtree):
 
 def test_delete(objtree):
     """Test deleting a pod."""
-    objtree.app_cmd("cd default")
-    objtree.current.kubectl.run = mock.MagicMock(return_value=subprocess.CompletedProcess("test", 0))
+    mocker = mock.MagicMock(return_value=subprocess.CompletedProcess("test", 0))
+    objtree.app_cmd("cd default/pod.failoid")
+    objtree.current.kubectl.run = mocker
+    objtree.app_cmd("cd ..")
     objtree.app_cmd("rm pod.failoid")
-    objtree.current.kubectl.run.assert_called_with("delete pod pod.failoid", True)
+    mocker.assert_called_with("delete pod failoid", True)
     # verify the pod isn't in the output of ls anymore
     out = objtree.app_cmd("ls")
     assert "pod.failoid" not in out.stdout
     output = objtree.app_cmd("rm pod.nothere")
-    assert "error: no such pod" in output.stdout
+    assert "pod.nothere: no such object" in output.stdout

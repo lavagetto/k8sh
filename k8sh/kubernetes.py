@@ -19,6 +19,7 @@ class KubeObject:
     parent: Optional["KubeObject"] = attr.ib()
     _children: Optional[List["KubeObject"]] = attr.ib(init=False, default=None)
     kind: str = ""
+    is_deletable: bool = True
 
     @property
     def children(self) -> List["KubeObject"]:
@@ -99,6 +100,14 @@ class KubeObject:
         if rc != 0:
             raise k8shError("Could not read the event log")
 
+    def delete(self):
+        """Delete the object"""
+        if not self.is_deletable:
+            raise k8shError(f"Objects of kind '{self.kind}' cannot be deleted")
+        result = self.kubectl.run(f"delete {self.kind} {self.name}", True)
+        if result.returncode != 0:
+            raise k8shError(f"Could not remove {self.path}: {result.stderr.decode('utf-8')}")
+
 
 @attr.s
 class Pod(KubeObject):
@@ -142,6 +151,7 @@ class Container(KubeObject):
     kind: str = "container"
     ID: str = attr.ib(init=False, default="")
     _remote: Optional[RemoteCommand] = attr.ib(init=False, default=None)
+    is_deletable = False
 
     def set_remote(self, hostname: str):
         self._remote = RemoteCommand(hostname, self.kubectl.remote.ssh_opts, "")
@@ -265,6 +275,7 @@ class Service(KubeObject):
 
 class Cluster(KubeObject):
     kind: str = "cluster"
+    is_deletable = False
 
     def __init__(self, name: str, kubectl: Kubectl):
         super().__init__(name, kubectl, None)
