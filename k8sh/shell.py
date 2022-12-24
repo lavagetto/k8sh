@@ -7,6 +7,8 @@ import cmd2  # type: ignore
 from k8sh import blue, k8shConfigPath, k8shError, kubernetes, red, setup, ConfigProfiles, Config
 from k8sh.exec import Kubectl, RemoteCommand
 
+from wmflib.interactive import ask_input
+
 CAT_NAV = "Kubernetes navigation"
 CAT_CONT = "Container-level debugging"
 CAT_SERV = "Service information"
@@ -327,6 +329,51 @@ class KubeCmd(cmd2.Cmd):
             self.current.eventlog(".metadata.creationTimestamp")
         except k8shError as e:
             print(red(str(e)))
+
+    @cmd2.with_category(CAT_NAV)
+    def do_rm(self, arg: cmd2.Statement):
+        """
+        Usage: rm <path>...
+        Context: any, but only objects with a namespace or a cluster as a parent can be deleted
+
+        Removes an object (or multiple ones) from k8s.
+        For pods that are part of a Deployment, they will be substituted with another one.
+        """
+        try:
+            self._check_current()
+            to_delete: List[kubernetes.KubeObject] = []
+            interactive = False
+            for argument in arg.arg_list:
+                # fat fingers protection: for an "all" glob, we switch to interactive mode automatically
+                if argument == "*":
+                    interactive = True
+                if argument == "-i":
+                    interactive = True
+                    continue
+                matching = self.ls(cmd2.Statement(argument, f"ls {argument}", "ls", [argument]))
+                # check we're matching something, and that we can delete that something
+                if len(matching) == 0:
+                    print(red(f"{argument}: no such object."))
+                    continue
+                for obj in matching:
+                    if obj.parent is None or obj.parent.kind not in ["cluster", "namespace"]:
+                        print(red(f"Cannot remove object {obj.path} (from {argument}"))
+                    else:
+                        to_delete.append(obj)
+
+            ask = interactive and len(to_delete) > 1
+            for obj in to_delete:
+                if ask:
+                    resp = ask_input("Should object {obj.path} be deleted? (y/n)", ["y", "n", "Y", "N", "Yes", "No"])
+                    if resp.lower().startswith("n"):
+                        continue
+                obj.delete()
+                print(f"{obj.path} removed")
+        except k8shError as e:
+            print(red(str(e)))
+            return 1
+        finally:
+            self.current.refresh()
 
 
 def from_configfile(path: Path) -> KubeCmd:
